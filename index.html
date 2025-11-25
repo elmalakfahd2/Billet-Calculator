@@ -12,6 +12,14 @@
 <link rel="apple-touch-icon" href="https://cdn-icons-png.flaticon.com/512/3135/3135715.png">
 <title>حاسبة طول البليت لقالب البثق - الألومنيوم</title>
 <link rel="manifest" href="manifest.json">
+
+<!-- إضافة Firebase SDK -->
+<script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-storage-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-analytics-compat.js"></script>
+
 <style>
 /* --- إصلاح الخطوط العربية --- */
 @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+Arabic:wght@400;500;700&display=swap');
@@ -2074,11 +2082,11 @@ span.english-numbers, .calculation-info span, .analysis-table td, .analysis-tabl
                     <div class="small" id="speedDescription">سيتم حساب السرعة المثلى تلقائياً بناءً على المعطيات</div>
                 </div>
 
-                <!-- حقل نسبة الوقت الضائع المضاف -->
+                <!-- حقل نسبة الوقت الضائع - تم إصلاحه ليتم حسابه تلقائياً -->
                 <div class="form-group">
                     <label for="wastedTimePercentage">نسبة الوقت الضائع لدورة البليت (%):</label>
                     <input type="number" id="wastedTimePercentage" value="20" step="1" min="0" max="100" inputmode="numeric" pattern="[0-9]*" class="english-numbers" />
-                    <div class="small">النسبة المئوية للوقت الضائع في دورة البليت (مثل: وقت تغيير البليت، إلخ)</div>
+                    <div class="small">سيتم حساب هذه النسبة تلقائياً بناءً على معطيات العملية</div>
                 </div>
 
                 <div class="form-group">
@@ -2509,6 +2517,7 @@ span.english-numbers, .calculation-info span, .analysis-table td, .analysis-tabl
             <p><strong>📦 الكمية المنتجة في الساعة:</strong> <span id="resultHourlyKg" class="english-numbers"></span> كجم/ساعة (<span id="resultHourlyTons" class="english-numbers"></span> طن/ساعة)</p>
             <p><strong>🗑️ هالك الباتس:</strong> <span id="resultButtScrap" class="english-numbers"></span> مم</p>
             <p><strong>📈 نسبة البثق (ER):</strong> <span id="resultExtrusionRatio" class="english-numbers"></span></p>
+            <p><strong>⏱️ نسبة الوقت الضائع:</strong> <span id="resultWastedTime" class="english-numbers"></span> %</p>
         </div>
 
         <div class="billet-result">
@@ -2601,6 +2610,38 @@ span.english-numbers, .calculation-info span, .analysis-table td, .analysis-tabl
 </div>
 
 <script>
+// ===== تهيئة Firebase =====
+const firebaseConfig = {
+  apiKey: "AIzaSyBXa_d9Iv45AXmw3i8qfK-qsB_GOu8Lu4E",
+  authDomain: "billet-calculator.firebaseapp.com",
+  projectId: "billet-calculator",
+  storageBucket: "billet-calculator.firebasestorage.app",
+  messagingSenderId: "94813264906",
+  appId: "1:94813264906:web:2f08a67bd6ef62c36b53f3",
+  measurementId: "G-4SP4QLKJ20"
+};
+
+// تهيئة Firebase
+try {
+  firebase.initializeApp(firebaseConfig);
+  console.log("✅ Firebase initialized successfully");
+  
+  // تهيئة Analytics
+  const analytics = firebase.analytics();
+  
+  // تهيئة Firestore
+  const db = firebase.firestore();
+  
+  // تهيئة Authentication
+  const auth = firebase.auth();
+  
+  // تهيئة Storage
+  const storage = firebase.storage();
+  
+} catch (error) {
+  console.error("❌ Firebase initialization error:", error);
+}
+
 // ===== نظام إدارة المستخدمين المحسن مع طرد مستخدم محدد =====
 class UserManagementSystem {
     constructor(userManager, adminManager) {
@@ -4378,8 +4419,9 @@ const companyManager = new CompanyManager(userManager);
 const adminManager = new AdminManager(userManager);
 const passwordRecovery = new PasswordRecovery(userManager);
 const superAdmin = new SuperAdmin();
+const userManagement = new UserManagementSystem(userManager, adminManager);
 
-// ===== دالة حساب عدد البليت في الساعة - الإصدار المصحح =====
+// ===== دالة حساب عدد البليت في الساعة - الإصدار المصحح مع تأثير الوقت الضائع =====
 function calculateBilletsPerHour(extrusionSpeed, billetLengthCm) {
     // طول البليت بالميليمتر
     const billetLengthMm = billetLengthCm * 10;
@@ -4388,8 +4430,11 @@ function calculateBilletsPerHour(extrusionSpeed, billetLengthCm) {
     // الوقت = طول البليت (مم) ÷ السرعة (م/دقيقة)
     const extrusionTimeSeconds = billetLengthMm / extrusionSpeed;
     
-    // إضافة 20% وقت ضائع
-    const totalTimePerBillet = extrusionTimeSeconds * 1.2;
+    // الحصول على نسبة الوقت الضائع من الحقل
+    const wastedTimePercentage = parseFloat(document.getElementById('wastedTimePercentage').value) || 20;
+    
+    // حساب الوقت الإجمالي مع إضافة الوقت الضائع
+    const totalTimePerBillet = extrusionTimeSeconds * (1 + (wastedTimePercentage / 100));
     
     // عدد البليت في الساعة = 3600 ثانية ÷ الوقت الإجمالي للبليت الواحدة
     const billetsPerHour = 3600 / totalTimePerBillet;
@@ -4548,6 +4593,51 @@ function calculateOptimalTemperature() {
     updateTemperatureWarning();
 }
 
+// ===== نظام حساب نسبة الوقت الضائع تلقائياً =====
+function calculateWastedTimePercentage() {
+    const alloy = document.getElementById('alloy').value;
+    const moldType = document.getElementById('moldType').value;
+    const extrusionRatio = parseFloat(document.getElementById('extrusionRatio').value) || 30;
+    const billetDiameter = document.getElementById('billetDiameter').value;
+    
+    let baseWastedTime = 20; // القيمة الأساسية 20%
+    
+    // تعديل حسب السبيكة
+    if (alloy === '6082' || alloy === '6061') {
+        baseWastedTime += 5; // سبائك أقوى تحتاج وقت إضافي
+    } else if (alloy === '6063' || alloy === '6060') {
+        baseWastedTime -= 2; // سبائك سهلة البثق
+    }
+    
+    // تعديل حسب نوع القالب
+    if (moldType === 'hollow') {
+        baseWastedTime += 3; // القوالب المجوفة تحتاج وقت إضافي
+    } else {
+        baseWastedTime -= 2; // القوالب الصلدة أسرع
+    }
+    
+    // تعديل حسب نسبة البثق
+    if (extrusionRatio > 80) {
+        baseWastedTime += 5; // نسب البثق العالية تحتاج وقت إضافي
+    } else if (extrusionRatio < 30) {
+        baseWastedTime -= 3; // نسب البثق المنخفضة أسرع
+    }
+    
+    // تعديل حسب قطر المكبس
+    if (billetDiameter === '11' || billetDiameter === '10') {
+        baseWastedTime += 3; // المكابس الكبيرة تحتاج وقت إضافي
+    } else if (billetDiameter === '5' || billetDiameter === '6') {
+        baseWastedTime -= 2; // المكابس الصغيرة أسرع
+    }
+    
+    // التأكد من أن النسبة بين 10% و 40%
+    const finalWastedTime = Math.max(10, Math.min(40, baseWastedTime));
+    
+    document.getElementById('wastedTimePercentage').value = finalWastedTime;
+    
+    return finalWastedTime;
+}
+
 // ===== تحديث السرعة تلقائياً عند تغيير أي من العوامل المؤثرة =====
 function updateSpeedAutomatically() {
     const optimalSpeed = calculateOptimalSpeed();
@@ -4634,14 +4724,16 @@ function initializeLengthSystem() {
                 customLengthContainer.classList.remove('active');
             }
             
-            updateMeterFromRodWithFixedWeight();
+            // التصحيح: تحديث وزن العود بناءً على الوزن المتري الثابت والطول الجديد
+            updateRodWeightFromMeterAndLength();
             saveState();
         });
     });
     
     customLengthInput.addEventListener('input', function() {
         setTimeout(() => {
-            updateMeterFromRodWithFixedWeight();
+            // التصحيح: تحديث وزن العود بناءً على الوزن المتري الثابت والطول الجديد
+            updateRodWeightFromMeterAndLength();
             saveState();
         }, 100);
     });
@@ -4964,6 +5056,8 @@ function applyCalculatedWeightToMeter() {
     const calculatedWeight = calculateWeightPerMeter();
     if (calculatedWeight > 0) {
         document.getElementById('weightPerMeter').value = calculatedWeight.toFixed(3);
+        
+        // تحديث وزن العود بناءً على الوزن المتري الجديد والطول
         updateRodFromMeter();
         updateExtrusionRatio();
         
@@ -4973,18 +5067,6 @@ function applyCalculatedWeightToMeter() {
         const profileName = activeProfile === 'box' ? 'العلبة' : activeProfile === 'pipe' ? 'الماسورة' : 'الزاوية';
         
         showTempMessage(`✅ تم تطبيق الوزن المتري المحسوب لل${profileName}: ${calculatedWeight.toFixed(3)} كجم/م`, 'success');
-    }
-}
-
-// ===== الدالة الجديدة: تحديث الوزن المتري مع الحفاظ على وزن العود ثابت =====
-function updateMeterFromRodWithFixedWeight() {
-    const rodWeight = parseFloat(document.getElementById('rodWeight').value);
-    const rodLength = getCurrentRodLength();
-    
-    if (!isNaN(rodWeight) && rodLength > 0) {
-        const newWeightPerMeter = rodWeight / rodLength;
-        document.getElementById('weightPerMeter').value = newWeightPerMeter.toFixed(3);
-        updateExtrusionRatio();
     }
 }
 
@@ -5666,8 +5748,9 @@ function calculateBilletLength(){
     document.getElementById('resultTemperature').textContent = extrusionTemperature;
     document.getElementById('resultSpeed').textContent = extrusionSpeed;
     document.getElementById('resultButtScrap').textContent = buttScrap;
+    document.getElementById('resultWastedTime').textContent = document.getElementById('wastedTimePercentage').value;
 
-    // حساب عدد البليت في الساعة باستخدام الدالة المصححة
+    // حساب عدد البليت في الساعة باستخدام الدالة المصححة مع تأثير الوقت الضائع
     const billetsPerHour = calculateBilletsPerHour(extrusionSpeed, billetLengthCm);
     document.getElementById('resultBilletsPerHour').textContent = billetsPerHour.toFixed(1);
 
@@ -5962,57 +6045,120 @@ function showTempMessage(message, type = 'info') {
     }, 3000);
 }
 
+// ===== التصحيح: الوزن المتري ثابت ووزن العود يتغير مع الطول =====
 function updateRodFromMeter() {
-    const m = parseFloat(document.getElementById('weightPerMeter').value);
+    const weightPerMeter = parseFloat(document.getElementById('weightPerMeter').value);
     const rodLength = getCurrentRodLength();
-    if (!isNaN(m)) {
-        document.getElementById('rodWeight').value = (m * rodLength).toFixed(3);
+    if (!isNaN(weightPerMeter) && rodLength > 0) {
+        // الوزن المتري يتحكم في وزن العود (التصحيح)
+        const newRodWeight = (weightPerMeter * rodLength).toFixed(3);
+        document.getElementById('rodWeight').value = newRodWeight;
+        
+        // تحديث نسبة البثق بعد التغيير
+        updateExtrusionRatio();
+        
+        // حفظ الحالة
+        saveState();
     }
-    updateExtrusionRatio();
 }
 
+// ===== التصحيح: تحديث الوزن المتري عند تغيير وزن العود يدوياً =====
 function updateMeterFromRod() {
-    const r = parseFloat(document.getElementById('rodWeight').value);
+    const rodWeight = parseFloat(document.getElementById('rodWeight').value);
     const rodLength = getCurrentRodLength();
-    if (!isNaN(r) && rodLength > 0) {
-        document.getElementById('weightPerMeter').value = (r / rodLength).toFixed(3);
+    if (!isNaN(rodWeight) && rodLength > 0) {
+        // حساب الوزن المتري الجديد بناءً على وزن العود
+        const newWeightPerMeter = (rodWeight / rodLength).toFixed(3);
+        document.getElementById('weightPerMeter').value = newWeightPerMeter;
+        
+        // تحديث نسبة البثق
+        updateExtrusionRatio();
+        
+        // حفظ الحالة
+        saveState();
+        
+        showTempMessage(`🔄 تم تحديث الوزن المتري إلى: ${newWeightPerMeter} كجم/م`, 'success');
     }
-    updateExtrusionRatio();
 }
 
-function applyAlloyToWeight(){
-    const diam = document.getElementById('billetDiameter').value;
-    const alloy = document.getElementById('alloy').value;
-    const base = baseBilletWeights[diam] || 0.67;
-    const factor = alloyFactor[alloy] || 1.0;
-    const newVal = (base * factor).toFixed(3);
-    document.getElementById('weightPerCm').value = parseFloat(newVal);
-    updateExtrusionRatio();
+// ===== دالة مساعدة جديدة: تحديث وزن العود بناءً على الوزن المتري والطول الحالي =====
+function updateRodWeightFromMeterAndLength() {
+    const weightPerMeter = parseFloat(document.getElementById('weightPerMeter').value);
+    const rodLength = getCurrentRodLength();
+    if (!isNaN(weightPerMeter) && rodLength > 0) {
+        const newRodWeight = (weightPerMeter * rodLength).toFixed(3);
+        document.getElementById('rodWeight').value = newRodWeight;
+        
+        // تحديث نسبة البثق
+        updateExtrusionRatio();
+        
+        // حفظ الحالة
+        saveState();
+    }
 }
 
-// ===== إدارة الحالة =====
+// ===== إصلاح مشكلة تحديث الوزن المتري عند تغيير وزن العود يدوياً =====
+function fixWeightUpdateLogic() {
+    const rodWeightInput = document.getElementById('rodWeight');
+    const weightPerMeterInput = document.getElementById('weightPerMeter');
+    
+    // عند تغيير وزن العود يدوياً، تحديث الوزن المتري
+    rodWeightInput.addEventListener('input', function() {
+        const rodWeight = parseFloat(this.value);
+        const rodLength = getCurrentRodLength();
+        
+        if (!isNaN(rodWeight) && rodLength > 0) {
+            // حساب الوزن المتري الجديد بناءً على وزن العود والطول
+            const newWeightPerMeter = (rodWeight / rodLength).toFixed(3);
+            weightPerMeterInput.value = newWeightPerMeter;
+            
+            // تحديث نسبة البثق
+            updateExtrusionRatio();
+            
+            // حفظ الحالة
+            saveState();
+            
+            console.log('✅ تم تحديث الوزن المتري:', newWeightPerMeter, 'كجم/م');
+        }
+    });
+    
+    // التأكد من أن الوزن المتري يتحكم في وزن العود (كما هو موجود)
+    weightPerMeterInput.addEventListener('input', function() {
+        updateRodFromMeter();
+    });
+}
+
+// ===== دوال الحفظ والتحميل =====
 function saveState() {
     const state = {
         numOpenings: document.getElementById('numOpenings').value,
         rodWeight: document.getElementById('rodWeight').value,
         weightPerMeter: document.getElementById('weightPerMeter').value,
-        desiredBedLength: document.getElementById('desiredBedLength').value,
         numCuts: document.getElementById('numCuts').value,
+        desiredBedLength: document.getElementById('desiredBedLength').value,
         billetDiameter: document.getElementById('billetDiameter').value,
+        moldNumber: document.getElementById('moldNumber').value,
+        moldVersion: document.getElementById('moldVersion').value,
+        inputBilletLength: document.getElementById('inputBilletLength').value,
         alloy: document.getElementById('alloy').value,
         weightPerCm: document.getElementById('weightPerCm').value,
+        buttScrap: document.getElementById('buttScrap').value,
         extrusionRatio: document.getElementById('extrusionRatio').value,
+        extrusionTemperature: document.getElementById('extrusionTemperature').value,
+        autoTemperature: document.getElementById('autoTemperature').value,
+        extrusionSpeed: document.getElementById('extrusionSpeed').value,
+        moldType: document.getElementById('moldType').value,
+        wastedTimePercentage: document.getElementById('wastedTimePercentage').value,
         scrapPercentage: document.getElementById('scrapPercentage').value,
         safetyFactor: document.getElementById('safetyFactor').value,
         bedScrapLength: document.getElementById('bedScrapLength').value,
-        buttScrap: document.getElementById('buttScrap').value,
         desiredTons: document.getElementById('desiredTons').value,
-        moldNumber: document.getElementById('moldNumber').value,
-        moldVersion: document.getElementById('moldVersion').value,
-        customLength: document.getElementById('customLength').value,
-        activeLength: document.querySelector('.toggle-btn.active')?.getAttribute('data-length') || '6',
         enableScrapSafety: document.getElementById('enableScrapSafety').value,
-        inputBilletLength: document.getElementById('inputBilletLength').value,
+        materialThickness: document.getElementById('materialThickness').value,
+        t4Time: document.getElementById('t4Time').value,
+        t5Time: document.getElementById('t5Time').value,
+        t6Time: document.getElementById('t6Time').value,
+        heatTreatmentTemp: document.getElementById('heatTreatmentTemp').value,
         boxWidth: document.getElementById('boxWidth').value,
         boxHeight: document.getElementById('boxHeight').value,
         boxThickness: document.getElementById('boxThickness').value,
@@ -6021,131 +6167,178 @@ function saveState() {
         angleWidth: document.getElementById('angleWidth').value,
         angleHeight: document.getElementById('angleHeight').value,
         angleThickness: document.getElementById('angleThickness').value,
-        activeProfileType: document.querySelector('.profile-type-btn.active')?.getAttribute('data-type') || 'box',
-        extrusionTemperature: document.getElementById('extrusionTemperature').value,
-        autoTemperature: document.getElementById('autoTemperature').value,
-        extrusionSpeed: document.getElementById('extrusionSpeed').value,
-        moldType: document.getElementById('moldType').value,
-        boxCalculatorCollapsed: document.getElementById('boxCalculatorContent').classList.contains('collapsed'),
-        temperatureTableHidden: document.getElementById('temperatureTableSection').style.display === 'none',
-        heatTreatmentCollapsed: document.getElementById('heatTreatmentContent').classList.contains('collapsed'),
-        alloySettingsCollapsed: document.getElementById('alloySettingsContent').classList.contains('collapsed'),
-        qualityStandardsCollapsed: document.getElementById('qualityStandardsContent').classList.contains('collapsed'),
-        companyCollapsed: document.getElementById('companyContent').classList.contains('collapsed'),
-        loginCollapsed: document.getElementById('loginContent').classList.contains('collapsed'),
-        t4Time: document.getElementById('t4Time').value,
-        t5Time: document.getElementById('t5Time').value,
-        t6Time: document.getElementById('t6Time').value,
-        heatTreatmentTemp: document.getElementById('heatTreatmentTemp').value,
-        materialThickness: document.getElementById('materialThickness').value
+        activeProfile: document.querySelector('.profile-type-btn.active')?.getAttribute('data-type') || 'box',
+        activeLength: document.querySelector('.toggle-btn.active')?.getAttribute('data-length') || '6',
+        customLength: document.getElementById('customLength').value,
+        timestamp: new Date().toISOString()
     };
-    try { 
-        localStorage.setItem('billetCalculatorState', JSON.stringify(state)); 
-    } catch(e){
-        console.error('خطأ في حفظ الحالة:', e);
-    }
+    
+    localStorage.setItem('billetCalculatorState', JSON.stringify(state));
 }
 
 function loadState() {
     try {
-        const s = JSON.parse(localStorage.getItem('billetCalculatorState') || '{}');
-        if (s.numOpenings) document.getElementById('numOpenings').value = s.numOpenings;
-        if (s.rodWeight) document.getElementById('rodWeight').value = s.rodWeight;
-        if (s.weightPerMeter) document.getElementById('weightPerMeter').value = s.weightPerMeter;
-        if (s.desiredBedLength) document.getElementById('desiredBedLength').value = s.desiredBedLength;
-        if (s.numCuts) document.getElementById('numCuts').value = s.numCuts;
-        if (s.billetDiameter) document.getElementById('billetDiameter').value = s.billetDiameter;
-        if (s.alloy) document.getElementById('alloy').value = s.alloy;
-        if (s.weightPerCm) document.getElementById('weightPerCm').value = s.weightPerCm;
-        if (s.extrusionRatio) document.getElementById('extrusionRatio').value = s.extrusionRatio;
-        if (s.scrapPercentage) document.getElementById('scrapPercentage').value = s.scrapPercentage;
-        if (s.safetyFactor) document.getElementById('safetyFactor').value = s.safetyFactor;
-        if (s.bedScrapLength) document.getElementById('bedScrapLength').value = s.bedScrapLength;
-        if (s.buttScrap) document.getElementById('buttScrap').value = s.buttScrap;
-        if (s.desiredTons) document.getElementById('desiredTons').value = s.desiredTons;
-        if (s.moldNumber) document.getElementById('moldNumber').value = s.moldNumber;
-        if (s.moldVersion) document.getElementById('moldVersion').value = s.moldVersion;
-        if (s.customLength) document.getElementById('customLength').value = s.customLength;
-        if (s.enableScrapSafety !== undefined) document.getElementById('enableScrapSafety').value = s.enableScrapSafety;
-        if (s.inputBilletLength) document.getElementById('inputBilletLength').value = s.inputBilletLength;
-        if (s.boxWidth) document.getElementById('boxWidth').value = s.boxWidth;
-        if (s.boxHeight) document.getElementById('boxHeight').value = s.boxHeight;
-        if (s.boxThickness) document.getElementById('boxThickness').value = s.boxThickness;
-        if (s.pipeOuterDiameter) document.getElementById('pipeOuterDiameter').value = s.pipeOuterDiameter;
-        if (s.pipeThickness) document.getElementById('pipeThickness').value = s.pipeThickness;
-        if (s.angleWidth) document.getElementById('angleWidth').value = s.angleWidth;
-        if (s.angleHeight) document.getElementById('angleHeight').value = s.angleHeight;
-        if (s.angleThickness) document.getElementById('angleThickness').value = s.angleThickness;
-        if (s.activeProfileType) {
-            document.querySelectorAll('.profile-type-btn').forEach(btn => {
-                if (btn.getAttribute('data-type') === s.activeProfileType) {
-                    btn.click();
-                }
-            });
-        }
-        if (s.extrusionTemperature) document.getElementById('extrusionTemperature').value = s.extrusionTemperature;
-        if (s.autoTemperature) document.getElementById('autoTemperature').value = s.autoTemperature;
-        if (s.extrusionSpeed) document.getElementById('extrusionSpeed').value = s.extrusionSpeed;
-        if (s.moldType) document.getElementById('moldType').value = s.moldType;
-        if (s.t4Time) document.getElementById('t4Time').value = s.t4Time;
-        if (s.t5Time) document.getElementById('t5Time').value = s.t5Time;
-        if (s.t6Time) document.getElementById('t6Time').value = s.t6Time;
-        if (s.heatTreatmentTemp) document.getElementById('heatTreatmentTemp').value = s.heatTreatmentTemp;
-        if (s.materialThickness) document.getElementById('materialThickness').value = s.materialThickness;
-
-        // تطبيق الطول النشط
-        if (s.activeLength) {
-            document.querySelectorAll('.toggle-btn').forEach(btn => {
-                if (btn.getAttribute('data-length') === s.activeLength) {
-                    btn.click();
-                }
-            });
-        }
-
-        // تطبيق حالات التبديل
-        if (s.boxCalculatorCollapsed) {
-            document.getElementById('boxCalculatorContent').classList.add('collapsed');
-            document.getElementById('boxCalculatorToggle').classList.add('rotated');
-        }
-        if (s.temperatureTableHidden) {
-            document.getElementById('temperatureTableSection').style.display = 'none';
-            document.getElementById('temperatureToggleBtn').textContent = '👁️ إظهار جدول درجات الحرارة';
-            document.getElementById('temperatureToggleBtn').classList.add('hidden');
-        }
-        if (s.heatTreatmentCollapsed) {
-            document.getElementById('heatTreatmentContent').classList.add('collapsed');
-            document.getElementById('heatTreatmentToggle').classList.add('rotated');
-        }
-        if (s.alloySettingsCollapsed) {
-            document.getElementById('alloySettingsContent').classList.add('collapsed');
-            document.getElementById('alloySettingsToggle').classList.add('rotated');
-        }
-        if (s.qualityStandardsCollapsed) {
-            document.getElementById('qualityStandardsContent').classList.add('collapsed');
-            document.getElementById('qualityStandardsToggle').classList.add('rotated');
-        }
-        if (s.companyCollapsed) {
-            document.getElementById('companyContent').classList.add('collapsed');
-            document.getElementById('companyToggle').classList.add('rotated');
-        }
-        if (s.loginCollapsed) {
-            document.getElementById('loginContent').classList.add('collapsed');
-            document.getElementById('loginToggle').classList.add('rotated');
-        }
-
-        updateExtrusionRatio();
-        calculateOptimalTemperature();
-        updateTemperatureWarning();
-        updateExtrusionRatioWarning();
+        const saved = localStorage.getItem('billetCalculatorState');
+        if (!saved) return;
         
-    } catch(e){
-        console.error('خطأ في تحميل الحالة:', e);
+        const state = JSON.parse(saved);
+        
+        // تحميل الحقول الأساسية
+        document.getElementById('numOpenings').value = state.numOpenings || '4';
+        document.getElementById('rodWeight').value = state.rodWeight || '1.2';
+        document.getElementById('weightPerMeter').value = state.weightPerMeter || '0.200';
+        document.getElementById('numCuts').value = state.numCuts || '7';
+        document.getElementById('desiredBedLength').value = state.desiredBedLength || '43.5';
+        document.getElementById('billetDiameter').value = state.billetDiameter || '7';
+        document.getElementById('moldNumber').value = state.moldNumber || '';
+        document.getElementById('moldVersion').value = state.moldVersion || '';
+        document.getElementById('inputBilletLength').value = state.inputBilletLength || '';
+        document.getElementById('alloy').value = state.alloy || '6063';
+        document.getElementById('weightPerCm').value = state.weightPerCm || '0.670';
+        document.getElementById('buttScrap').value = state.buttScrap || '15';
+        document.getElementById('extrusionRatio').value = state.extrusionRatio || '30';
+        document.getElementById('extrusionTemperature').value = state.extrusionTemperature || '480';
+        document.getElementById('autoTemperature').value = state.autoTemperature || '1';
+        document.getElementById('extrusionSpeed').value = state.extrusionSpeed || '6';
+        document.getElementById('moldType').value = state.moldType || 'hollow';
+        document.getElementById('wastedTimePercentage').value = state.wastedTimePercentage || '20';
+        document.getElementById('scrapPercentage').value = state.scrapPercentage || '5';
+        document.getElementById('safetyFactor').value = state.safetyFactor || '5';
+        document.getElementById('bedScrapLength').value = state.bedScrapLength || '1.5';
+        document.getElementById('desiredTons').value = state.desiredTons || '';
+        document.getElementById('enableScrapSafety').value = state.enableScrapSafety || '1';
+        document.getElementById('materialThickness').value = state.materialThickness || '1.5';
+        document.getElementById('t4Time').value = state.t4Time || '0';
+        document.getElementById('t5Time').value = state.t5Time || '2.5';
+        document.getElementById('t6Time').value = state.t6Time || '4.5';
+        document.getElementById('heatTreatmentTemp').value = state.heatTreatmentTemp || '175';
+        
+        // تحميل إعدادات الوزن المتري
+        document.getElementById('boxWidth').value = state.boxWidth || '40';
+        document.getElementById('boxHeight').value = state.boxHeight || '40';
+        document.getElementById('boxThickness').value = state.boxThickness || '0.5';
+        document.getElementById('pipeOuterDiameter').value = state.pipeOuterDiameter || '50';
+        document.getElementById('pipeThickness').value = state.pipeThickness || '1.0';
+        document.getElementById('angleWidth').value = state.angleWidth || '25';
+        document.getElementById('angleHeight').value = state.angleHeight || '25';
+        document.getElementById('angleThickness').value = state.angleThickness || '2.0';
+        
+        // استعادة نوع البروفايل النشط
+        const activeProfile = state.activeProfile || 'box';
+        document.querySelectorAll('.profile-type-btn').forEach(btn => {
+            if (btn.getAttribute('data-type') === activeProfile) {
+                btn.click();
+            }
+        });
+        
+        // استعادة الطول النشط
+        const activeLength = state.activeLength || '6';
+        document.querySelectorAll('.toggle-btn').forEach(btn => {
+            if (btn.getAttribute('data-length') === activeLength) {
+                btn.click();
+            }
+        });
+        
+        // استعادة الطول المخصص
+        if (state.customLength) {
+            document.getElementById('customLength').value = state.customLength;
+        }
+        
+        // إعادة حساب الوزن المتري
+        calculateWeightPerMeter();
+        
+        // تحديث السرعة والحرارة تلقائياً
+        updateSpeedAutomatically();
+        calculateOptimalTemperature();
+        
+        console.log('✅ تم تحميل الحالة المحفوظة');
+        
+    } catch (e) {
+        console.error('❌ خطأ في تحميل الحالة:', e);
     }
 }
 
-// ===== تهيئة جميع الأنظمة عند تحميل الصفحة =====
+// ===== تطبيق السبيكة على الوزن =====
+function applyAlloyToWeight() {
+    const alloy = document.getElementById('alloy').value;
+    const billetDiameter = document.getElementById('billetDiameter').value;
+    const factor = alloyFactor[alloy] || 1.0;
+    const baseWeight = baseBilletWeights[billetDiameter] || 0.670;
+    const adjustedWeight = (baseWeight * factor).toFixed(3);
+    
+    document.getElementById('weightPerCm').value = adjustedWeight;
+    updateExtrusionRatio();
+    saveState();
+}
+
+// ===== تهيئة التطبيق =====
 document.addEventListener('DOMContentLoaded', function() {
-    // تهيئة أنظمة التبديل
+    // تحميل الحالة المحفوظة
+    loadState();
+    
+    // إعداد مستمعات الأحداث
+    document.getElementById('calculateBtn').addEventListener('click', calculateBilletLength);
+    document.getElementById('resetBtn').addEventListener('click', function() {
+        if (confirm('⚠️ هل تريد مسح جميع الحقول؟')) {
+            localStorage.removeItem('billetCalculatorState');
+            location.reload();
+        }
+    });
+    document.getElementById('printBtn').addEventListener('click', function() {
+        window.print();
+    });
+    
+    // مستمعات الحقول الأساسية
+    document.getElementById('rodWeight').addEventListener('input', updateMeterFromRod);
+    document.getElementById('weightPerMeter').addEventListener('input', updateRodFromMeter);
+    document.getElementById('numOpenings').addEventListener('input', updateExtrusionRatio);
+    document.getElementById('billetDiameter').addEventListener('change', applyAlloyToWeight);
+    document.getElementById('alloy').addEventListener('change', applyAlloyToWeight);
+    document.getElementById('inputBilletLength').addEventListener('input', computeFromBilletLength);
+    
+    // مستمعات الحقول الجديدة
+    document.getElementById('numCuts').addEventListener('input', recalculateBedLengthFromCuts);
+    document.getElementById('desiredBedLength').addEventListener('input', recalculateCutsFromBedLength);
+    document.getElementById('bedScrapLength').addEventListener('input', function() {
+        recalculateBedLengthFromCuts();
+        recalculateCutsFromBedLength();
+    });
+    
+    // مستمعات إدارة القوالب
+    document.getElementById('saveMoldBtn').addEventListener('click', saveMoldData);
+    document.getElementById('searchMoldBtn').addEventListener('click', searchMold);
+    document.getElementById('showMoldsBtn').addEventListener('click', showAllMolds);
+    document.getElementById('deleteMoldBtn').addEventListener('click', deleteMold);
+    document.getElementById('moldNumber').addEventListener('input', autoSearchMold);
+    document.getElementById('moldVersion').addEventListener('input', autoSearchMold);
+    
+    // مستمعات الوزن المتري
+    document.getElementById('boxWidth').addEventListener('input', calculateWeightPerMeter);
+    document.getElementById('boxHeight').addEventListener('input', calculateWeightPerMeter);
+    document.getElementById('boxThickness').addEventListener('input', calculateWeightPerMeter);
+    document.getElementById('pipeOuterDiameter').addEventListener('input', calculateWeightPerMeter);
+    document.getElementById('pipeThickness').addEventListener('input', calculateWeightPerMeter);
+    document.getElementById('angleWidth').addEventListener('input', calculateWeightPerMeter);
+    document.getElementById('angleHeight').addEventListener('input', calculateWeightPerMeter);
+    document.getElementById('angleThickness').addEventListener('input', calculateWeightPerMeter);
+    document.getElementById('applyBoxWeight').addEventListener('click', applyCalculatedWeightToMeter);
+    
+    // مستمعات الحرارة والسرعة
+    document.getElementById('extrusionTemperature').addEventListener('input', updateTemperatureWarning);
+    document.getElementById('alloy').addEventListener('change', updateTemperatureWarning);
+    document.getElementById('autoTemperature').addEventListener('change', calculateOptimalTemperature);
+    document.getElementById('weightPerMeter').addEventListener('input', updateSpeedAutomatically);
+    document.getElementById('numOpenings').addEventListener('input', updateSpeedAutomatically);
+    document.getElementById('alloy').addEventListener('change', updateSpeedAutomatically);
+    document.getElementById('moldType').addEventListener('change', updateSpeedAutomatically);
+    document.getElementById('extrusionRatio').addEventListener('input', updateExtrusionRatioWarning);
+    
+    // مستمعات المعالجة الحرارية
+    document.getElementById('materialThickness').addEventListener('input', calculateHeatTreatmentTimes);
+    document.getElementById('alloy').addEventListener('change', calculateHeatTreatmentTimes);
+    document.getElementById('calculateAverageThickness').addEventListener('click', calculateAverageThickness);
+    
+    // تهيئة الأنظمة
     initializeWeightCalculatorToggle();
     initializeProfileTypeToggle();
     initializeLengthSystem();
@@ -6157,230 +6350,60 @@ document.addEventListener('DOMContentLoaded', function() {
     initializeResultsToggle();
     initializeCompanyToggle();
     initializeLoginToggle();
-
-    // تحميل الحالة المحفوظة
-    loadState();
-
-    // إضافة المستمعين للأزرار
-    document.getElementById('calculateBtn').addEventListener('click', calculateBilletLength);
-    document.getElementById('resetBtn').addEventListener('click', function(){
-        if (confirm('هل تريد مسح جميع الحقول؟')) {
-            document.getElementById('numOpenings').value = '4';
-            document.getElementById('rodWeight').value = '1.2';
-            document.getElementById('weightPerMeter').value = '0.200';
-            document.getElementById('desiredBedLength').value = '43.5';
-            document.getElementById('numCuts').value = '7';
-            document.getElementById('billetDiameter').value = '7';
-            document.getElementById('alloy').value = '6063';
-            document.getElementById('weightPerCm').value = '0.670';
-            document.getElementById('extrusionRatio').value = '30';
-            document.getElementById('scrapPercentage').value = '5';
-            document.getElementById('safetyFactor').value = '5';
-            document.getElementById('bedScrapLength').value = '1.5';
-            document.getElementById('buttScrap').value = '15';
-            document.getElementById('desiredTons').value = '';
-            document.getElementById('moldNumber').value = '';
-            document.getElementById('moldVersion').value = '';
-            document.getElementById('customLength').value = '6';
-            document.getElementById('inputBilletLength').value = '';
-            document.getElementById('enableScrapSafety').value = '1';
-            document.getElementById('extrusionTemperature').value = '480';
-            document.getElementById('autoTemperature').value = '1';
-            document.getElementById('extrusionSpeed').value = '6';
-            document.getElementById('moldType').value = 'hollow';
-            document.getElementById('wastedTimePercentage').value = '20';
-            document.getElementById('t4Time').value = '0';
-            document.getElementById('t5Time').value = '2.5';
-            document.getElementById('t6Time').value = '4.5';
-            document.getElementById('heatTreatmentTemp').value = '175';
-            document.getElementById('materialThickness').value = '1.5';
-            
-            document.querySelector('.toggle-btn[data-length="6"]').click();
-            document.querySelector('.profile-type-btn[data-type="box"]').click();
-            
-            document.getElementById('result').style.display = 'none';
-            saveState();
-            showTempMessage('✅ تم مسح جميع الحقول', 'success');
+    
+    // إصلاح تحديث الوزن المتري
+    setTimeout(() => {
+        fixWeightUpdateLogic();
+        console.log('✅ تم تفعيل إصلاح تحديث الأوزان');
+    }, 1000);
+    
+    // تهيئة النوافذ المنبثقة
+    document.getElementById('modalConfirm').addEventListener('click', function() {
+        if (userManager.currentUser.isLoggedIn) {
+            userManager.handleModalConfirm();
+        } else {
+            companyManager.handleModalConfirm();
         }
     });
-    document.getElementById('printBtn').addEventListener('click', function(){
-        window.print();
-    });
-
-    // إضافة المستمعين لحقول الوزن
-    document.getElementById('rodWeight').addEventListener('input', function(){
-        updateMeterFromRod();
-        saveState();
-    });
-    document.getElementById('weightPerMeter').addEventListener('input', function(){
-        updateRodFromMeter();
-        saveState();
-    });
-    document.getElementById('alloy').addEventListener('change', function(){
-        applyAlloyToWeight();
-        calculateOptimalTemperature();
-        updateSpeedAutomatically();
-        calculateHeatTreatmentTimes();
-        saveState();
-    });
-    document.getElementById('billetDiameter').addEventListener('change', function(){
-        applyAlloyToWeight();
-        calculateOptimalTemperature();
-        updateSpeedAutomatically();
-        saveState();
-    });
-    document.getElementById('weightPerCm').addEventListener('input', function(){
-        updateExtrusionRatio();
-        saveState();
-    });
-    document.getElementById('numOpenings').addEventListener('input', function(){
-        updateExtrusionRatio();
-        updateSpeedAutomatically();
-        saveState();
-    });
-    document.getElementById('extrusionRatio').addEventListener('input', function(){
-        updateExtrusionRatioWarning();
-        saveState();
-    });
-    document.getElementById('scrapPercentage').addEventListener('input', saveState);
-    document.getElementById('safetyFactor').addEventListener('input', saveState);
-    document.getElementById('bedScrapLength').addEventListener('input', saveState);
-    document.getElementById('buttScrap').addEventListener('input', saveState);
-    document.getElementById('desiredTons').addEventListener('input', saveState);
-    document.getElementById('moldNumber').addEventListener('input', function(){
-        setTimeout(autoSearchMold, 500);
-        saveState();
-    });
-    document.getElementById('moldVersion').addEventListener('input', function(){
-        setTimeout(autoSearchMold, 500);
-        saveState();
-    });
-    document.getElementById('inputBilletLength').addEventListener('input', function(){
-        if (this.value) {
-            setTimeout(computeFromBilletLength, 800);
-        }
-        saveState();
-    });
-    document.getElementById('enableScrapSafety').addEventListener('change', saveState);
-    document.getElementById('extrusionTemperature').addEventListener('input', function(){
-        updateTemperatureWarning();
-        updateSpeedAutomatically();
-        saveState();
-    });
-    document.getElementById('autoTemperature').addEventListener('change', function(){
-        if (this.value === '1') {
-            calculateOptimalTemperature();
-        }
-        saveState();
-    });
-    document.getElementById('extrusionSpeed').addEventListener('input', saveState);
-    document.getElementById('moldType').addEventListener('change', function(){
-        updateSpeedAutomatically();
-        saveState();
-    });
-    document.getElementById('wastedTimePercentage').addEventListener('input', saveState);
-    document.getElementById('t5Time').addEventListener('input', saveState);
-    document.getElementById('t6Time').addEventListener('input', saveState);
-    document.getElementById('heatTreatmentTemp').addEventListener('input', saveState);
-    document.getElementById('materialThickness').addEventListener('input', function(){
-        calculateHeatTreatmentTimes();
-        saveState();
-    });
-
-    // إضافة المستمعين لحقول الوزن المتري
-    document.getElementById('boxWidth').addEventListener('input', function(){
-        calculateBoxWeight();
-        saveState();
-    });
-    document.getElementById('boxHeight').addEventListener('input', function(){
-        calculateBoxWeight();
-        saveState();
-    });
-    document.getElementById('boxThickness').addEventListener('input', function(){
-        calculateBoxWeight();
-        saveState();
-    });
-    document.getElementById('pipeOuterDiameter').addEventListener('input', function(){
-        calculatePipeWeight();
-        saveState();
-    });
-    document.getElementById('pipeThickness').addEventListener('input', function(){
-        calculatePipeWeight();
-        saveState();
-    });
-    document.getElementById('angleWidth').addEventListener('input', function(){
-        calculateAngleWeight();
-        saveState();
-    });
-    document.getElementById('angleHeight').addEventListener('input', function(){
-        calculateAngleWeight();
-        saveState();
-    });
-    document.getElementById('angleThickness').addEventListener('input', function(){
-        calculateAngleWeight();
-        saveState();
-    });
-
-    // إضافة المستمعين لأزرار القوالب
-    document.getElementById('saveMoldBtn').addEventListener('click', saveMoldData);
-    document.getElementById('searchMoldBtn').addEventListener('click', searchMold);
-    document.getElementById('showMoldsBtn').addEventListener('click', showAllMolds);
-    document.getElementById('deleteMoldBtn').addEventListener('click', deleteMold);
-
-    // إضافة مستمعين لأزرار إضافية
-    document.getElementById('applyBoxWeight').addEventListener('click', applyCalculatedWeightToMeter);
-    document.getElementById('calculateAverageThickness').addEventListener('click', calculateAverageThickness);
-
-    // إضافة مستمعين للحقول الجديدة
-    document.getElementById('desiredBedLength').addEventListener('input', function(){
-        recalculateCutsFromBedLength();
-        saveState();
-    });
-    document.getElementById('numCuts').addEventListener('input', function(){
-        recalculateBedLengthFromCuts();
-        saveState();
-    });
-
-    // إضافة مستمعين للنوافذ المنبثقة
-    document.getElementById('modalConfirm').addEventListener('click', function(){
-        userManager.handleModalConfirm();
-        companyManager.handleModalConfirm();
-    });
-    document.getElementById('modalCancel').addEventListener('click', function(){
+    
+    document.getElementById('modalCancel').addEventListener('click', function() {
         document.getElementById('companyModal').style.display = 'none';
     });
-
-    // تهيئة نظام إدارة المستخدمين
-    window.userManagement = new UserManagementSystem(userManager, adminManager);
-
-    // تحديث السرعة والحرارة تلقائياً عند التحميل
-    setTimeout(() => {
-        updateSpeedAutomatically();
-        calculateOptimalTemperature();
-        calculateHeatTreatmentTimes();
-    }, 1000);
-
-    console.log('✅ تم تحميل حاسبة البليت بنجاح - التطوير: فهد عبدالعزيز');
-});
-
-// ===== دعم تثبيت التطبيق (PWA) =====
-let deferredPrompt;
-window.addEventListener('beforeinstallprompt', (e) => {
-    e.preventDefault();
-    deferredPrompt = e;
-    document.getElementById('installButton').style.display = 'block';
-});
-
-document.getElementById('installButton').addEventListener('click', async () => {
-    if (deferredPrompt) {
-        deferredPrompt.prompt();
-        const { outcome } = await deferredPrompt.userChoice;
-        if (outcome === 'accepted') {
-            document.getElementById('installButton').style.display = 'none';
+    
+    // إغلاق النافذة المنبثقة عند النقر خارجها
+    window.addEventListener('click', function(event) {
+        const modal = document.getElementById('companyModal');
+        if (event.target === modal) {
+            modal.style.display = 'none';
         }
-        deferredPrompt = null;
-    }
+    });
+    
+    // زر التثبيت
+    let deferredPrompt;
+    const installButton = document.getElementById('installButton');
+    
+    window.addEventListener('beforeinstallprompt', (e) => {
+        e.preventDefault();
+        deferredPrompt = e;
+        installButton.style.display = 'block';
+    });
+    
+    installButton.addEventListener('click', async () => {
+        if (deferredPrompt) {
+            deferredPrompt.prompt();
+            const { outcome } = await deferredPrompt.userChoice;
+            if (outcome === 'accepted') {
+                installButton.style.display = 'none';
+            }
+            deferredPrompt = null;
+        }
+    });
+    
+    console.log('✅ تم تحميل التطبيق بنجاح');
 });
+
+// ===== دالة الحفظ التلقائي =====
+setInterval(saveState, 10000); // حفظ كل 10 ثواني
 </script>
 </body>
 </html>
